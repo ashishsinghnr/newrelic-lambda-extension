@@ -1,22 +1,21 @@
-# Instrumented Dotnet Lambda
+# Instrumented Ruby Lambda
 
-This is a "Hello, World" style Lambda function in .NET, instrumented 
-with the New Relic .NET Agent AWS Lambda layer.
+This is a "Hello, World" style Lambda function in Ruby, instrumented 
+with the New Relic agent.
 
-This example is both instructive, and a diagnostic tool: if you can
-deploy this Lambda function, and see its events in NR One, you'll
+This example is both instructive and a diagnostic tool: if you can
+deploy this Lambda function and see its events in NR One, you'll
 know that all the telemetry plumbing is connected correctly. 
 
 ## Building and deploying
 
 ### Prerequisites
 
-- The [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
+- The [AWS CLI v2](https://aws.amazon.com/cli/)
 - [Docker](https://docs.docker.com/get-docker/)
 - The [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-- [newrelic-lambda](https://github.com/newrelic/newrelic-lambda-cli#installation) CLI tool
 
-Make sure you've run the `newrelic-lambda install` command in your
+Make sure you've run the `newrelic-lambda integrations install` command in your
 AWS Region, and included the `--enable-license-key-secret` flag.
 
 ### deploy script
@@ -48,14 +47,18 @@ tell CloudFormation where to find lambda function code, what layers to use, and
 what IAM policies to add to the Lambda function's execution role. We also set
 environment variables that are available to the handler function. 
 
-### Function.cs
+### app.rb
 
-Lambda functions written in .NET are C# classes. The runtime loads them
-just like any C# class, and then invokes the handler function for each 
-invocation event.
+Lambda functions written in Ruby are involve a Ruby method at a mininum and can
+optionally be found within a class and/or module based namespace. The runtime
+loads the Ruby code, and then invokes the handler function method for each 
+invocation event. New Relic publishes a Lambda Layer that wraps your handler
+function and initializes the New Relic agent, allowing us to collect telemetry.
 
-The New Relic .NET Agent is used to instrument your AWS Lambda.  In most cases, 
-the agent automatically instruments your AWS Lambda function handler.  The layer 
-used in this example includes both the agent and the required New Relic Lambda 
-Extension.  When instrumenting an AWS Lambda, the .NET Agent relies on the Lambda 
-Extension to send telemetry to New Relic.
+There are a couple examples here of how you might add custom events and attributes
+to the default telemetry.
+
+Since Ruby is a dynamic, interpreted language, the Agent can inject instrumentation
+into the various client libraries you might be using in your function. This happens 
+once, during cold start, and provides rich, detailed instrumentation out of the box, 
+with minimal developer effort.
