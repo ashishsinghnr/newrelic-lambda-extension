@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -130,7 +131,7 @@ func (c *Client) SendTelemetry(ctx context.Context, invokedFunctionARN string, t
 	totalTime := end.Sub(start)
 	transmissionTime := end.Sub(transmitStart)
 	util.Logf(
-		"Sent %d/%d New Relic payload batches with %d log events successfully with certainty in %.3fms (%dms to transmit %.1fkB).\n",
+		"Sent %d/%d New Relic Telemetry payload batches with %d log events successfully with certainty in %.3fms (%dms to transmit %.1fkB).\n",
 		successCount,
 		len(compressedPayloads),
 		len(telemetry),
@@ -149,7 +150,8 @@ func (c *Client) sendPayloads(compressedPayloads []*bytes.Buffer, builder reques
 	sentBytes = 0
 	sendPayloadsStartTime := time.Now()
 	for _, p := range compressedPayloads {
-		sentBytes += p.Len()
+		payloadSize := p.Len()
+		sentBytes += payloadSize
 		currentPayloadBytes := p.Bytes()
 
 		var response AttemptData
@@ -168,8 +170,8 @@ func (c *Client) sendPayloads(compressedPayloads []*bytes.Buffer, builder reques
 		}
 
 		if response.Error != nil {
-			util.Logf("Telemetry client error: %s", response.Error)
-			sentBytes -= p.Len()
+			util.Logf("Telemetry client error: %s, payload size: %d bytes", response.Error, payloadSize)
+			sentBytes -= payloadSize
 		} else if response.Response.StatusCode >= 300 {
 			util.Logf("Telemetry client response: [%s] %s", response.Response.Status, response.ResponseBody)
 		} else {
@@ -283,6 +285,30 @@ func (c *Client) SendFunctionLogs(ctx context.Context, invokedFunctionARN string
 	return nil
 }
 
+// getNewRelicTags adds tags to the logs if NR_TAGS has values
+func getNewRelicTags(common map[string]interface{}) {
+    nrTagsStr := os.Getenv("NR_TAGS")
+    nrDelimiter := os.Getenv("NR_ENV_DELIMITER")
+    if nrDelimiter == "" {
+        nrDelimiter = ";"
+    }
+
+    if nrTagsStr != "" {
+        tags := strings.Split(nrTagsStr, nrDelimiter)
+        nrTags := make(map[string]string)
+        for _, tag := range tags {
+            keyValue := strings.Split(tag, ":")
+            if len(keyValue) == 2 {
+                nrTags[keyValue[0]] = keyValue[1]
+            }
+        }
+
+        for k, v := range nrTags {
+            common[k] = v
+        }
+    }
+}
+
 // buildLogPayloads is a helper function that improves readability of the SendFunctionLogs method
 func (c *Client) buildLogPayloads(ctx context.Context, invokedFunctionARN string, lines []logserver.LogLine) ([]*bytes.Buffer, requestBuilder, error) {
 	common := map[string]interface{}{
@@ -290,6 +316,8 @@ func (c *Client) buildLogPayloads(ctx context.Context, invokedFunctionARN string
 		"faas.arn":  invokedFunctionARN,
 		"faas.name": c.functionName,
 	}
+	
+	getNewRelicTags(common)
 
 	logMessages := make([]FunctionLogMessage, 0, len(lines))
 	for _, l := range lines {
@@ -303,7 +331,6 @@ func (c *Client) buildLogPayloads(ctx context.Context, invokedFunctionARN string
 			traceId = c.batch.RetrieveTraceID(l.RequestID)
 		}
 		logMessages = append(logMessages, NewFunctionLogMessage(ts, l.RequestID, traceId, string(l.Content)))
-		util.Debugf("Sending function logs for request %s", l.RequestID)
 	}
 	// The Log API expects an array
 	logData := []DetailedFunctionLog{NewDetailedFunctionLog(common, logMessages)}
