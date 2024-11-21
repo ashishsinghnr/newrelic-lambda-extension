@@ -1,6 +1,6 @@
 [![Community Plus header](https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Community_Plus.png)](https://opensource.newrelic.com/oss-category/#community-plus)
 
-# newrelic-lambda-extension [![Build Status](https://circleci.com/gh/newrelic/newrelic-lambda-extension.svg?style=svg)](https://circleci.com/gh/newrelic/newrelic-lambda-extension) [![Coverage](https://codecov.io/gh/newrelic/newrelic-lambda-extension/branch/main/graph/badge.svg?token=T73UEDVA5K)](https://codecov.io/gh/newrelic/newrelic-lambda-extension)
+# newrelic-lambda-extension [![Build Status](https://github.com/newrelic/newrelic-lambda-extension/actions/workflows/build-release-assets.yml/badge.svg)](https://github.com/newrelic/newrelic-lambda-extension/actions/workflows/build-release-assets.yml) [![Coverage](https://codecov.io/gh/newrelic/newrelic-lambda-extension/branch/main/graph/badge.svg?token=T73UEDVA5K)](https://codecov.io/gh/newrelic/newrelic-lambda-extension)
 
 An AWS Lambda extension to collect, enhance, and transport telemetry data from your AWS Lambda functions to New Relic without requiring an external transport such as CloudWatch Logs or Kinesis.
 
@@ -74,18 +74,19 @@ This packages the extension, and publishes a new layer version in your AWS accou
 
 ## Startup Checks
 
-This Lambda Extension will perform a series of checks on initialization. Should any of
-these checks fail, the extension wil attempt to output troubleshooting recommendations to both
+This Lambda Extension will perform a series of checks on initialization to help customer troubleshoot configuration. Should any of
+these checks fail, the extension wil attempt to output recommendations to both
 CloudWatch Logs and New Relic Logs. If you have any issues using this extension, be sure
-to check your logs for messages starting with `Startup check failed:` for
-troubleshooting recommendations.
+to check your logs for messages starting with `Startup check warning:` for
+troubleshooting recommendations. It is recommended to ignore all Extension checks after the lambda is successfully instrumented as mentioned [here](#extension-environment-variables).
 
 Startup checks include:
-
-* New Relic agent version checks
-* Lambda handler configuration checks
-* Lambda environment variable checks
-* Vendored New Relic agent checks
+| Check name | Description |
+|--------|-----------|
+| *agent* | New Relic agent version check |
+| *handler* | Lambda handler configuration check |
+| *sanity* | Lambda environment variable, SSM, & Secrets Manager checks for license key |
+| *vendor* | If Vendored New Relic agent added along with layer check |
 
 ## Logging
 
@@ -98,11 +99,15 @@ The New Relic Lambda Extension can also send your function's logs to New Relic. 
 | `NR_TAGS` |  | | Specify tags to be added to all log events. **Optional**. Each tag is composed of a colon-delimited key and value. Multiple key-value pairs are semicolon-delimited; for example, env:prod;team:myTeam. |
 | `NR_ENV_DELIMITER` | | | Some users in UTF-8 environments might face difficulty in defining strings of `NR_TAGS` delimited by the semicolon `;` character. Use `NR_ENV_DELIMITER`, to set custom delimiter for `NR_TAGS`. |
 
-## Disabling Extension
+## Extension Environment variables
 
-The New Relic Lambda Extension is enabled by default. To disable it, after adding or
-updating the Lambda layer, set the `NEW_RELIC_LAMBDA_EXTENSION_ENABLED` environment
-variable to `false`.
+The New Relic Lambda Extension offers various features, which can be utilised by using the Lambda environment variables. These include:
+| Environment variable | Default value | Options | Description |
+|--------|-----------|-------------|-------------|
+|`NEW_RELIC_IGNORE_EXTENSION_CHECKS`| `false` | `all` , `agent`, `handler`, `sanity`, `vendor` | Ignore selected Extension Checks by using a comma-separated value, e.g., `agent,handler`, to ignore agent and handler checks. Use `all` to ignore all the Extension Checks as mentioned [here](#startup-checks). It is recommended to ignore all Extension checks after the lambda is successfully instrumented. |
+|`NEW_RELIC_DATA_COLLECTION_TIMEOUT`| `10s` | Time such as `5s`. Valid time units are "ms", "s"| Reduce time the Extension waits for sending telemetry.|
+|`NEW_RELIC_LAMBDA_EXTENSION_ENABLED`| `false` | `true` , `false` | Disable the Extension. It is enabled by default |
+
 
 ## Testing
 
