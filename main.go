@@ -114,6 +114,9 @@ func main() {
 	if conf.SendFunctionLogs {
 		eventTypes = append(eventTypes, api.Function)
 	}
+	if conf.SendExtensionLogs {
+		eventTypes = append(eventTypes, api.Extension)
+	}
 	subscriptionRequest := api.DefaultLogSubscription(eventTypes, logServer.Port())
 	err = invocationClient.LogRegister(ctx, subscriptionRequest)
 	if err != nil {
@@ -248,7 +251,7 @@ func mainLoop(ctx context.Context, invocationClient *client.InvocationClient, ba
 					batch.AddTelemetry(lastRequestId, []byte(timeoutMessage))
 				} else if event.ShutdownReason == api.Failure && lastRequestId != "" {
 					// Synthesize a generic platform error. Probably an OOM, though it could be any runtime crash.
-					errorMessage := fmt.Sprintf("RequestId: %s A platform error caused a shutdown", lastRequestId)
+					errorMessage := fmt.Sprintf("RequestId: %s AWS Lambda platform fault caused a shutdown", lastRequestId)
 					batch.AddTelemetry(lastRequestId, []byte(errorMessage))
 				}
 
