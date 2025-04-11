@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
@@ -87,8 +88,111 @@ func PreConnect(cmd RpmCmd, cs *RpmControls) (string, error) {
 	return preConnectResponse.Collector, nil
 }
 
-func Connect(cmd RpmCmd, cs *RpmControls) (string, string, error) {
+func getLambdaARN(cmd RpmCmd) string {
+	awsLambdaName := cmd.metaData["AWSFunctionName"].(string)
+	awsAccountId := cmd.metaData["AWSAccountId"].(string)
+	awsRegion := os.Getenv("AWS_REGION")
+	if awsRegion == "" {
+		awsRegion = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	return fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", awsRegion, awsAccountId, awsLambdaName)
+}
 
+func getUtilizationData(cmd RpmCmd) map[string]interface{} {
+	awsLambdaName := cmd.metaData["AWSFunctionName"].(string)
+	awsAccountId := cmd.metaData["AWSAccountId"].(string)
+	awsRegion := os.Getenv("AWS_REGION")
+	if awsRegion == "" {
+		awsRegion = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	awsUnqualifiedLambdaARN := getLambdaARN(cmd)
+	utilizationData := map[string]interface{}{
+		"vendors": map[string]interface{}{
+			"awslambdafunction": map[string]interface{}{
+				"aws.arn": awsUnqualifiedLambdaARN,
+				"aws.region":awsRegion,
+				"aws.accountId": awsAccountId,
+				"aws.functionName": awsLambdaName,
+			},
+		},
+	}
+	return utilizationData
+}
+
+type AgentRuntime string
+
+var (
+	Node 	AgentRuntime = "node"
+	Python 	AgentRuntime = "python"
+	Go 		AgentRuntime = "go"
+	Dotnet 	AgentRuntime = "dotnet"
+	Ruby   	AgentRuntime = "ruby"
+	Java 	AgentRuntime = "java"
+	runtimeLookupPath     = "/var/lang/bin"
+)
+
+var LambdaRuntimes = []AgentRuntime{Node, Python, Go, Dotnet, Ruby, Java}
+
+func checkRuntime() (AgentRuntime) {
+	for _, runtime := range LambdaRuntimes {
+		p := filepath.Join(runtimeLookupPath, string(runtime))
+		if util.PathExists(p) {
+			return runtime
+		}
+	}
+	return Go
+}
+
+type agentConfig struct {
+	language            AgentRuntime
+	agentVersion        string
+}
+
+var agentRuntimeConfig = map[AgentRuntime]agentConfig{
+	Node: {
+		language:     Node,
+		agentVersion: "12.17.0",
+	},
+	Python: {
+		language:     Python,
+		agentVersion: "10.8.1",
+	},
+	Ruby: {
+		language:     Ruby,
+		agentVersion: "9.18.0",
+	},
+	Go: {
+		language:     Go,
+		agentVersion: "3.38.0",
+	},
+	Dotnet: {
+		language:    Dotnet,
+		agentVersion: "10.40.0",
+	},
+	Java: {
+		language:   Java,
+		agentVersion: "2.2.0",
+	},
+}
+
+type Label struct {
+	LabelType  string `json:"label_type"`
+	LabelValue string `json:"label_value"`
+}
+
+func getLabels(cmd RpmCmd) []Label {
+	lambdaARN := getLambdaARN(cmd)
+	labels := []Label{
+		{LabelType: "aws.arn", LabelValue: lambdaARN},
+		{LabelType: "isLambdaFunction", LabelValue: "true"},
+	}
+	return labels
+}
+
+
+func Connect(cmd RpmCmd, cs *RpmControls) (string, string, error) {
+	runtime := checkRuntime()
+	runtimeConfig := agentRuntimeConfig[runtime]
 	pid := os.Getpid()
 	appName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
 	if appName == "" {
@@ -97,14 +201,17 @@ func Connect(cmd RpmCmd, cs *RpmControls) (string, string, error) {
 	data := []map[string]interface{}{
 		{
 			"pid":           pid,
-			"language":      "go",
-			"agent_version": "3.35.1",
+			"language":      runtimeConfig.language,
+			"agent_version": runtimeConfig.agentVersion,
 			"host":          "AWS Lambda",
 			"app_name":      []string{appName},
 			"identifier":    appName,
+			"utilization":   getUtilizationData(cmd),
+			"labels": 		 getLabels(cmd),
 		},
 	}
 	marshaledData, err := json.Marshal(data)
+	util.Debugf("Marshalled Data for Connect Call for runtime %s: %s\n", string(runtime), string(marshaledData))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal connect data: %w", err)
 	}
