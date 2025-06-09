@@ -34,6 +34,10 @@ type LogServer struct {
 	functionLogChan   chan []LogLine
 	lastRequestId     string
 	lastRequestIdLock *sync.Mutex
+	isShuttingDown    bool
+	shutdownLock      sync.RWMutex
+
+	wg                sync.WaitGroup
 }
 
 func (ls *LogServer) Port() uint16 {
@@ -43,6 +47,11 @@ func (ls *LogServer) Port() uint16 {
 }
 
 func (ls *LogServer) Close() error {
+
+	ls.shutdownLock.Lock()
+	ls.isShuttingDown = true
+	ls.shutdownLock.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
@@ -50,7 +59,7 @@ func (ls *LogServer) Close() error {
 	if ret == context.DeadlineExceeded {
 		ret = nil
 	}
-
+	ls.wg.Wait()
 	close(ls.platformLogChan)
 	close(ls.functionLogChan)
 	return ret
@@ -108,6 +117,16 @@ var reportStringRegExp, _ = regexp.Compile("RequestId: ([a-fA-F0-9-]+)(.*)")
 
 func (ls *LogServer) handler(res http.ResponseWriter, req *http.Request) {
 	defer util.Close(req.Body)
+	ls.wg.Add(1)
+	defer ls.wg.Done()
+
+	ls.shutdownLock.RLock()
+	logServerShuttingDown := ls.isShuttingDown
+	ls.shutdownLock.RUnlock()
+	if logServerShuttingDown {
+		_, _ = res.Write(nil)
+		return
+	}
 
 	bodyBytes, err := io.ReadAll(req.Body)
 	if err != nil {
@@ -219,7 +238,7 @@ func startInternal(host string) (*LogServer, error) {
 
 	go func() {
 		util.Logln("Starting log server.")
-		util.Logf("Log server terminating: %v\n", server.Serve(listener))
+		util.Logf("Log server started to terminate: %v\n", server.Serve(listener))
 	}()
 
 	return logServer, nil
